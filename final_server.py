@@ -12,6 +12,7 @@ users = {
 questions = {}
 logged_users = {} # a dictionary of client hostnames to usernames - will be used later
 messages_to_send = []
+client_sockets = []
 
 ERROR_MSG = "Error!"
 SERVER_PORT = 5678
@@ -168,8 +169,11 @@ def handle_logout_message(conn):
 	Returns: None
 	"""
 	global logged_users
+	global client_sockets
 
 	del logged_users[conn.getpeername()]
+	client_sockets.remove(conn)
+	print("Client logged off!", conn.getpeername())
 	conn.close()
 
 
@@ -238,17 +242,22 @@ def main():
 	global questions
 	global logged_users
 	global messages_to_send
-	
+	global client_sockets
+
 	print("Welcome to Trivia Server!")
 
 	server_socket = setup_socket()
-	client_sockets = []
 
 	print("Server is up and running...")
 
 	while True:
 
-		ready_to_read, ready_to_write, in_error = select.select([server_socket] + client_sockets, client_sockets, [])
+		try:
+			ready_to_read, ready_to_write, in_error = select.select([server_socket] + client_sockets, client_sockets, [])
+		except ValueError:
+			for sock in client_sockets:
+				if sock.fileno() == -1:
+					handle_logout_message(sock)
 
 		for current_socket in ready_to_read:
 			if current_socket is server_socket:
@@ -258,12 +267,6 @@ def main():
 			else:
 				try:
 					cmd, data = recv_message_and_parse(current_socket)
-				except ConnectionAbortedError:
-					del logged_users[current_socket.getpeername()]
-					client_sockets.remove(current_socket)
-					print("Client logged off!", current_socket.getpeername())
-					current_socket.close()
-					break
 				except OSError:
 					del logged_users[current_socket.getpeername()]
 					client_sockets.remove(current_socket)
@@ -272,9 +275,6 @@ def main():
 					break
 				if cmd == "LOGOUT":
 					handle_logout_message(current_socket)
-					client_sockets.remove(current_socket)
-					print("Client logged off!", current_socket.getpeername())
-					current_socket.close()
 					break
 				else:
 					handle_client_message(current_socket, cmd, data)
@@ -288,3 +288,5 @@ def main():
 
 if __name__ == '__main__':
 	main()
+
+	
